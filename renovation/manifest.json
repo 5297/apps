@@ -1,0 +1,10 @@
+{
+  "name": "עלויות השיפוץ",
+  "short_name": "שיפוץ",
+  "start_url": ".",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#f3f5f4",
+  "theme_color": "#2f6f62"
+}
