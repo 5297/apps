@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>עלויות השיפוץ</title>
-<link rel="manifest" href="manifest.json">
+<!-- ההתקנה דרך האפליקציה הראשית -->
 <meta name="theme-color" content="#2f6f62">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -51,15 +51,26 @@ button{font:inherit;cursor:pointer}
 .chip{border:1px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--card);font-variant-numeric:tabular-nums}
 .chip b{font-weight:600} .chip i{font-style:normal;color:var(--exp);font-size:.9em}
 ul{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
-li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
-#elist li{grid-template-columns:auto 1fr auto auto auto}
+li{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.acts{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px}
+li.pp,li.ed{display:flex;flex-wrap:wrap;gap:8px;align-items:end;background:var(--exp-bg);padding:10px;border-radius:8px}
+li.ed{background:var(--card)}
+li.pp input{width:8em;flex:0 0 auto}
+li.ed label{flex:1 1 9em}
+.ppok,.edok{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:10px 14px;font-weight:600}
+.ppno,.edno{background:none;border:0;color:var(--muted);padding:10px 6px}
+li.grp{cursor:pointer}
+li.grp .n b{font-weight:600}
+.cnt{color:var(--muted);font-size:.85rem}
+li.sub{padding-inline-start:16px;border-bottom-style:dashed}
 #elist .a{color:var(--exp)}
 .d{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums;min-width:3.2em}
 .n{min-width:0;overflow-wrap:anywhere}
 .a{font-family:var(--display);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
-.del,.pay{background:none;border:0;color:var(--muted);padding:4px 6px;font-size:.85rem}
+.del,.pay,.part,.edit{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);padding:5px 10px;font-size:.85rem}
 .pay{color:var(--accent);font-weight:600}
-.del.arm,.pay.arm{color:var(--danger);font-weight:600}
+.part{color:var(--exp);font-weight:600}
+.del.arm,.pay.arm{color:var(--danger);border-color:var(--danger);font-weight:600}
 .empty{color:var(--muted);padding:12px 0;display:block}
 .out{background:none;border:0;color:var(--muted);font-size:.85rem;text-decoration:underline;justify-self:start;padding:0}
 @media (max-width:420px){form{grid-template-columns:1fr}}
@@ -69,18 +80,31 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
 
 <!-- כניסה -->
 <div class="wrap" id="loginView" hidden>
+  <a href="/" style="display:inline-block;margin-bottom:8px;color:#2f6f62;font-weight:600;text-decoration:none">→ לתפריט האפליקציות</a>
   <h1>עלויות השיפוץ – כניסה</h1>
   <form id="lf" autocomplete="on">
     <label class="full">דואר אלקטרוני<input id="email" type="email" required autocomplete="email"></label>
     <label class="full">סיסמה<input id="pass" type="password" required minlength="6" autocomplete="current-password"></label>
     <button class="add" type="submit" id="loginBtn">כניסה</button>
     <button class="add sec" type="button" id="signupBtn">פתיחת משתמש חדש</button>
+    <button class="out" type="button" id="forgotBtn">שכחתי סיסמה</button>
     <div class="msg" id="lmsg" aria-live="polite"></div>
+  </form>
+</div>
+
+<!-- סיסמה חדשה -->
+<div class="wrap" id="resetView" hidden>
+  <h1>בחירת סיסמה חדשה</h1>
+  <form id="rf" autocomplete="on">
+    <label class="full">סיסמה חדשה (לפחות 6 תווים)<input id="newpass" type="password" required minlength="6" autocomplete="new-password"></label>
+    <button class="add" type="submit">שמירת הסיסמה</button>
+    <div class="msg" id="rmsg" aria-live="polite"></div>
   </form>
 </div>
 
 <!-- האפליקציה -->
 <div class="wrap" id="appView" hidden>
+  <a href="/" style="display:inline-block;margin-bottom:8px;color:#2f6f62;font-weight:600;text-decoration:none">→ לתפריט האפליקציות</a>
   <header>
     <h1>עלויות השיפוץ – שולם עד היום</h1>
     <div class="total" id="total">…</div>
@@ -113,7 +137,7 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
 (function(){
   var db = supabase.createClient(window.APP_CONFIG.url, window.APP_CONFIG.key);
   var T = 'renovation_payments';
-  var rows = [], busy = false, armed = null, kind = 'paid';
+  var rows = [], busy = false, armed = null, kind = 'paid', partId = null, editId = null, openG = {};
   var $ = function(id){return document.getElementById(id)};
   var fmt = function(n){return Number(n||0).toLocaleString('he-IL') + ' ₪'};
   var esc = function(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
@@ -121,7 +145,26 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
   function today(){var t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')}
 
   /* ---------- כניסה ---------- */
-  function show(view){ $('loginView').hidden = view!=='login'; $('appView').hidden = view!=='app'; }
+  var recovering = false;
+  function show(view){ $('loginView').hidden = view!=='login'; $('appView').hidden = view!=='app'; $('resetView').hidden = view!=='reset'; }
+  $('forgotBtn').addEventListener('click', function(){
+    var em = $('email').value.trim();
+    if(!em){ $('lmsg').textContent = 'הקלד קודם את הדואר שלך בשדה למעלה, ואז לחץ שוב על "שכחתי סיסמה".'; return; }
+    $('lmsg').textContent = 'שולח…';
+    db.auth.resetPasswordForEmail(em, {redirectTo: location.origin + location.pathname}).then(function(r){
+      $('lmsg').textContent = r.error ? 'השליחה נכשלה: ' + r.error.message : 'נשלח אליך מייל. לחץ על הקישור שבו ובחר סיסמה חדשה.';
+    });
+  });
+  $('rf').addEventListener('submit', function(e){
+    e.preventDefault();
+    var pw = $('newpass').value;
+    if(pw.length < 6){ $('rmsg').textContent = 'הסיסמה צריכה לפחות 6 תווים.'; return; }
+    $('rmsg').textContent = 'שומר…';
+    db.auth.updateUser({password: pw}).then(function(r){
+      if(r.error){ $('rmsg').textContent = 'השמירה נכשלה: ' + r.error.message; return; }
+      recovering = false; $('rmsg').textContent = 'הסיסמה עודכנה.'; show('app'); load();
+    });
+  });
   $('lf').addEventListener('submit', function(e){
     e.preventDefault(); $('lmsg').textContent = 'נכנס…';
     db.auth.signInWithPassword({email:$('email').value.trim(), password:$('pass').value}).then(function(r){
@@ -132,13 +175,15 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
     var em = $('email').value.trim(), pw = $('pass').value;
     if(!em || pw.length < 6){ $('lmsg').textContent = 'מלא דואר וסיסמה (לפחות 6 תווים).'; return; }
     $('lmsg').textContent = 'פותח משתמש…';
-    db.auth.signUp({email:em, password:pw}).then(function(r){
+    db.auth.signUp({email:em, password:pw, options:{emailRedirectTo: location.origin + location.pathname}}).then(function(r){
       if(r.error) $('lmsg').textContent = 'לא הצלחתי לפתוח משתמש: ' + r.error.message;
       else if(!r.data.session) $('lmsg').textContent = 'נשלח אליך מייל אישור. לחץ על הקישור שבו ואז היכנס כאן.';
     });
   });
   $('logout').addEventListener('click', function(){ db.auth.signOut(); });
   db.auth.onAuthStateChange(function(ev, session){
+    if(ev === 'PASSWORD_RECOVERY'){ recovering = true; show('reset'); return; }
+    if(recovering) return;
     if(session){ show('app'); load(); } else { show('login'); }
   });
 
@@ -188,14 +233,31 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
     var keys = Object.keys(g).sort(function(a,b){return (g[b]+(ge[b]||0))-(g[a]+(ge[a]||0))});
     $('sum').innerHTML = keys.map(function(k){return '<span class="chip">'+esc(k)+' · <b>'+fmt(g[k])+'</b>'+(ge[k]?' <i>+ '+fmt(ge[k])+'</i>':'')+'</span>'}).join('');
     var byDate = function(a,b){var ad=a.d||'',bd=b.d||'';return ad<bd?1:ad>bd?-1:b.id-a.id};
-    $('elist').innerHTML = exp.length ? exp.slice().sort(function(a,b){return (a.d||'9')<(b.d||'9')?-1:1}).map(function(r){
-      return '<li><span class="d">'+shortDate(r.d)+'</span><span class="n">'+esc(r.who)+'</span><span class="a">'+(r.amt?fmt(r.amt):'סכום לא ידוע')+'</span>'+
-        btn('pay',r.id,'שולם ✓','לסמן שולם?') + btn('del',r.id,'מחק','למחוק?')+'</li>'
+    function plain(cls,id,label){ return '<button class="'+cls+'" data-id="'+id+'" type="button">'+label+'</button>'; }
+    function row(r, sub){
+      var h = '<li'+(sub?' class="sub"':'')+'><span class="d">'+shortDate(r.d)+'</span><span class="n">'+esc(r.who)+'</span><span class="a">'+(r.amt?fmt(r.amt):'סכום לא ידוע')+'</span><span class="acts">'+
+        (r.exp ? plain('part',r.id,'חלקי') : '') + plain('edit',r.id,'ערוך') +
+        (r.exp ? btn('pay',r.id,'שולם ✓','לסמן שולם?') : '') + btn('del',r.id,'מחק','למחוק?') + '</span></li>';
+      if(partId===r.id) h += '<li class="pp"><span>כמה שולם עכשיו?</span><input id="ppamt" inputmode="numeric" placeholder="0">'+
+          '<button class="ppok" type="button">אישור</button><button class="ppno" type="button">ביטול</button></li>';
+      if(editId===r.id) h += '<li class="ed"><label>למי / על מה<input id="edwho" value="'+esc(r.who)+'"></label>'+
+          '<label>סכום (₪)<input id="edamt" inputmode="numeric" value="'+(r.amt||'')+'"></label>'+
+          '<label>תאריך<input id="eddate" type="date" value="'+(r.d||'')+'"></label>'+
+          '<button class="edok" type="button">שמירה</button><button class="edno" type="button">ביטול</button></li>';
+      return h;
+    }
+    /* צפוי לשלם: שורות עם אותו שם מוצגות יחד בשורה אחת שאפשר לפתוח */
+    var groups = {}, order = [];
+    exp.slice().sort(function(a,b){return (a.d||'9')<(b.d||'9')?-1:(a.d||'9')>(b.d||'9')?1:a.id-b.id}).forEach(function(r){
+      var k = r.who.trim(); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(r);
+    });
+    $('elist').innerHTML = exp.length ? order.map(function(k){
+      var gr = groups[k]; if(gr.length===1) return row(gr[0], false);
+      var s = gr.reduce(function(t,r){return t+r.amt},0), isOpen = !!openG[k];
+      return '<li class="grp" data-g="'+esc(k)+'"><span class="d">'+shortDate(gr[0].d)+'</span><span class="n"><b>'+esc(k)+'</b> <span class="cnt">· '+gr.length+' שורות '+(isOpen?'▴ סגור':'▾ פתח')+'</span></span><span class="a">'+(s?fmt(s):'סכום לא ידוע')+'</span></li>'+
+        (isOpen ? gr.map(function(r){return row(r, true)}).join('') : '');
     }).join('') : '<li class="empty">אין כרגע תשלומים צפויים. בחר "צפוי לשלם" למעלה כדי להוסיף.</li>';
-    $('list').innerHTML = paid.length ? paid.slice().sort(byDate).map(function(r){
-      return '<li><span class="d">'+shortDate(r.d)+'</span><span class="n">'+esc(r.who)+'</span><span class="a">'+fmt(r.amt)+'</span>'+
-        btn('del',r.id,'מחק','למחוק?')+'</li>'
-    }).join('') : '<li class="empty">עדיין אין תשלומים.</li>';
+    $('list').innerHTML = paid.length ? paid.slice().sort(byDate).map(function(r){ return row(r, false); }).join('') : '<li class="empty">עדיין אין תשלומים.</li>';
   }
 
   $('f').addEventListener('submit', function(e){
@@ -212,7 +274,19 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
   });
 
   $('appView').addEventListener('click', function(e){
-    var b = e.target.closest('.del,.pay'); if(!b || busy) return;
+    if(busy) return;
+    var t = e.target;
+    if(t.closest('.ppok')){ payPart(); return; }
+    if(t.closest('.edok')){ saveEdit(); return; }
+    if(t.closest('.ppno,.edno')){ partId = null; editId = null; render(); return; }
+    var pt = t.closest('.part,.edit');
+    if(pt){ var pid = +pt.getAttribute('data-id'), isPart = pt.classList.contains('part');
+      if(isPart){ partId = (partId===pid ? null : pid); editId = null; } else { editId = (editId===pid ? null : pid); partId = null; }
+      armed = null; render();
+      var inp = $(isPart ? 'ppamt' : 'edamt'); if(inp && (partId||editId)) inp.focus(); return; }
+    var gl = t.closest('li.grp');
+    if(gl){ var gk = gl.getAttribute('data-g'); openG[gk] = !openG[gk]; render(); return; }
+    var b = t.closest('.del,.pay'); if(!b) return;
     var k = b.getAttribute('data-k'), id = +b.getAttribute('data-id');
     if(armed !== k){ armed = k; render(); return; }
     armed = null;
@@ -225,6 +299,44 @@ li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:ce
       rows = rows.filter(function(x){return x.id!==id}); render();
       db.from(T).delete().eq('id', id).then(function(res){ done(res, 'נמחק: ' + r.who); });
     }
+  });
+
+  function num(id){ return Math.round(parseFloat(($(id).value||'').replace(/[^\d.]/g,''))) || 0; }
+
+  /* תשלום חלקי: רושם את מה ששולם ומוריד אותו מהסכום הצפוי */
+  function payPart(){
+    var r = rows.filter(function(x){return x.id===partId})[0]; if(!r) return;
+    var p = num('ppamt');
+    if(!p){ $('msg').textContent = 'צריך לכתוב כמה שולם.'; return; }
+    if(r.amt && p >= r.amt){ $('msg').textContent = 'הסכום שווה ליתרה או גדול ממנה – לחץ "שולם ✓" במקום.'; return; }
+    busy = true; partId = null;
+    var paidRow = {d:today(), who:r.who + ' – תשלום חלקי', amt:p, exp:false};
+    var left = r.amt ? r.amt - p : 0;
+    db.from(T).insert(paidRow).select('id,d,who,amt,exp').then(function(res){
+      if(res.error){ done(res); return; }
+      rows.push(res.data[0]);
+      if(!r.amt){ render(); done(res, 'נרשם תשלום חלקי: ' + fmt(p)); return; }
+      r.amt = left; render();
+      db.from(T).update({amt:left}).eq('id', r.id).then(function(res2){
+        done(res2, 'נרשם תשלום חלקי ' + fmt(p) + ' · נשאר לשלם ' + fmt(left));
+      });
+    });
+  }
+
+  /* עריכת שורה: שם, סכום ותאריך */
+  function saveEdit(){
+    var r = rows.filter(function(x){return x.id===editId})[0]; if(!r) return;
+    var who = $('edwho').value.trim(), amt = num('edamt'), d = $('eddate').value || null;
+    if(!who || (!amt && !r.exp)){ $('msg').textContent = 'צריך למלא שם וסכום.'; return; }
+    if(!r.exp && !d) d = r.d || today();
+    busy = true; editId = null;
+    r.who = who; r.amt = amt; r.d = d; render();
+    db.from(T).update({who:who, amt:amt, d:d}).eq('id', r.id).then(function(res){ done(res, 'עודכן: ' + who + ' ' + fmt(amt)); });
+  }
+  $('appView').addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    if(e.target.id==='ppamt'){ e.preventDefault(); payPart(); }
+    else if(/^ed(who|amt|date)$/.test(e.target.id)){ e.preventDefault(); saveEdit(); }
   });
 })();
 </script>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>האפליקציות של משה</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f6f62">
+<link rel="icon" href="icon-192.png">
+<style>
+body{margin:0;font-family:system-ui,Arial,sans-serif;background:#f3f5f4;color:#1d2b28}
+.wrap{max-width:520px;margin:0 auto;padding:24px 16px}
+h1{font-size:1.5rem;margin:8px 0 20px;color:#2f6f62}
+a.app{display:flex;align-items:center;gap:14px;background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;text-decoration:none;color:inherit;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+a.app img{width:52px;height:52px;border-radius:12px}
+.t{font-size:1.15rem;font-weight:700}.s{font-size:.9rem;color:#5d6b68;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>האפליקציות שלי</h1>
+  <a class="app" href="renovation/">
+    <img src="renovation/icon-192.png" alt="">
+    <div><div class="t">עלויות השיפוץ</div><div class="s">מה שולם ומה צפוי לשלם</div></div>
+  </a>
+</div>
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register("sw.js");</script>
+</body>
+</html>
