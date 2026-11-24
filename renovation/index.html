@@ -73,6 +73,26 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
 .del.arm,.pay.arm{color:var(--danger);border-color:var(--danger);font-weight:600}
 .empty{color:var(--muted);padding:12px 0;display:block}
 .out{background:none;border:0;color:var(--muted);font-size:.85rem;text-decoration:underline;justify-self:start;padding:0}
+.tbl{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--line)}
+.tbl th{font-family:var(--display);font-weight:500;color:var(--muted);font-size:.9rem;background:var(--bg)}
+.tbl td.m,.tbl th.m{text-align:left;white-space:nowrap}
+.tbl tr.sup{cursor:pointer}
+.tbl tr.sup td:first-child{font-weight:600}
+.tbl .ok{color:var(--accent);font-weight:600}
+.tbl .left{color:var(--exp);font-weight:600}
+.tbl .q{color:var(--muted)}
+.tbl tr.det td{background:var(--bg);font-size:.88rem;color:var(--muted);padding:6px 12px 6px 12px}
+.tbl tr.det td:first-child{padding-inline-start:26px}
+.tbl tfoot td{font-family:var(--display);font-weight:700;border-bottom:0;background:var(--bg)}
+.tbl .pbtn{display:inline-block;margin-inline-start:8px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:4px 10px;font-size:.85rem;font-weight:600}
+.tbl tr.payrow td{background:var(--exp-bg)}
+.payf{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
+.payf label{flex:1 1 7em}
+.payf .ok2{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:10px 14px;font-weight:600}
+.payf .no2{background:none;border:0;color:var(--muted);padding:10px 6px}
+.payf .nt{flex-basis:100%;font-size:.85rem;color:var(--muted)}
+.hint{font-size:.85rem;color:var(--muted);margin-top:6px}
 @media (max-width:420px){form{grid-template-columns:1fr}}
 </style>
 </head>
@@ -114,6 +134,11 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
       <div class="box"><div class="l">צפי סך הכול לשיפוץ</div><div class="v" id="ftotal">…</div></div>
     </div>
   </header>
+  <section><h2>לפי ספק</h2>
+    <table class="tbl"><thead><tr><th>למי</th><th class="m">שולם</th><th class="m">נשאר</th></tr></thead><tbody id="stbl"></tbody><tfoot id="sfoot"></tfoot></table>
+    <div class="hint">לחיצה על שורה מראה את התשלומים שלה</div>
+  </section>
+  <h2 style="margin-bottom:-12px">הוספת תשלום</h2>
   <form id="f" autocomplete="off">
     <div class="kind" role="group" aria-label="סוג">
       <button type="button" id="kpaid" aria-pressed="true">שולם</button>
@@ -126,7 +151,6 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
     <div class="msg" id="msg" aria-live="polite"></div>
   </form>
   <section><h2>צפוי לשלם</h2><ul id="elist"></ul></section>
-  <section><h2>לפי ספק (שולם · <span style="color:var(--exp)">צפוי</span>)</h2><div class="sum" id="sum"></div></section>
   <section><h2>כל התשלומים ששולמו</h2><ul id="list"></ul></section>
   <button class="out" id="logout" type="button">יציאה מהמשתמש</button>
 </div>
@@ -137,7 +161,7 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
 (function(){
   var db = supabase.createClient(window.APP_CONFIG.url, window.APP_CONFIG.key);
   var T = 'renovation_payments';
-  var rows = [], busy = false, armed = null, kind = 'paid', partId = null, editId = null, openG = {};
+  var rows = [], busy = false, armed = null, kind = 'paid', partId = null, editId = null, openG = {}, openS = {}, payS = null;
   var $ = function(id){return document.getElementById(id)};
   var fmt = function(n){return Number(n||0).toLocaleString('he-IL') + ' ₪'};
   var esc = function(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
@@ -228,10 +252,30 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
     $('ftotal').textContent = fmt(pt+et);
     var unk = exp.filter(function(r){return !r.amt}).length;
     $('count').textContent = paid.length + ' תשלומים · ' + exp.length + ' צפויים' + (unk ? ' (' + unk + ' מהם בלי סכום – לא נכללים בצפי)' : '');
-    var g = {}, ge = {};
-    rows.forEach(function(r){var k=r.who.trim().split(/[\s–-]+/)[0]; if(r.exp){ge[k]=(ge[k]||0)+r.amt; g[k]=g[k]||0} else g[k]=(g[k]||0)+r.amt});
-    var keys = Object.keys(g).sort(function(a,b){return (g[b]+(ge[b]||0))-(g[a]+(ge[a]||0))});
-    $('sum').innerHTML = keys.map(function(k){return '<span class="chip">'+esc(k)+' · <b>'+fmt(g[k])+'</b>'+(ge[k]?' <i>+ '+fmt(ge[k])+'</i>':'')+'</span>'}).join('');
+    /* טבלה לפי ספק */
+    var key = skey;
+    var S = {}, so = [];
+    rows.forEach(function(r){ var k = key(r.who); if(!S[k]){ S[k]={p:0,e:0,unk:false,list:[]}; so.push(k); }
+      var o=S[k]; o.list.push(r); if(r.exp){ o.e+=r.amt; if(!r.amt) o.unk=true; } else o.p+=r.amt; });
+    so.sort(function(a,b){ return (S[b].p+S[b].e)-(S[a].p+S[a].e); });
+    var num0 = function(n){ return Number(n).toLocaleString('he-IL'); };
+    $('stbl').innerHTML = so.map(function(k){
+      var o = S[k], left;
+      if(!o.e && !o.unk) left = '<span class="ok">✓ סגור</span>';
+      else if(!o.e) left = '<span class="q">סכום לא ידוע</span>';
+      else left = '<span class="left">'+num0(o.e)+'</span>'+(o.unk?' <span class="q">+?</span>':'');
+      var h = '<tr class="sup" data-s="'+esc(k)+'"><td>'+esc(k)+' '+(openS[k]?'▴':'▾')+'<button class="pbtn" type="button" data-p="'+esc(k)+'">שילמתי</button></td><td class="m">'+(o.p?num0(o.p):'—')+'</td><td class="m">'+left+'</td></tr>';
+      if(payS===k) h += '<tr class="payrow"><td colspan="3"><div class="payf">'+
+          '<label>כמה שילמת ל'+esc(k)+'?<input id="pamt" inputmode="numeric" placeholder="0"></label>'+
+          '<label>תאריך<input id="pdate" type="date" value="'+today()+'"></label>'+
+          '<button class="ok2" type="button">אישור</button><button class="no2" type="button">ביטול</button>'+
+          (o.e?'<div class="nt">יורד אוטומטית ממה שנשאר לשלם ('+num0(o.e)+')</div>':'')+'</div></td></tr>';
+      if(openS[k]) h += o.list.slice().sort(function(a,b){return (a.d||'9')<(b.d||'9')?-1:1}).map(function(r){
+        return '<tr class="det"><td>'+(r.d?shortDate(r.d)+' · ':'')+esc(r.who)+'</td><td class="m">'+(r.exp?'':num0(r.amt))+'</td><td class="m">'+(r.exp?(r.amt?num0(r.amt):'?'):'')+'</td></tr>';
+      }).join('');
+      return h;
+    }).join('');
+    $('sfoot').innerHTML = '<tr><td>סך הכול</td><td class="m">'+num0(pt)+'</td><td class="m">'+num0(et)+(unk?' <span class="q">+?</span>':'')+'</td></tr>';
     var byDate = function(a,b){var ad=a.d||'',bd=b.d||'';return ad<bd?1:ad>bd?-1:b.id-a.id};
     function plain(cls,id,label){ return '<button class="'+cls+'" data-id="'+id+'" type="button">'+label+'</button>'; }
     function row(r, sub){
@@ -268,8 +312,10 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
     var r = {d:$('date').value || (kind==='exp' ? null : today()), who:who, amt:amt, exp:kind==='exp'};
     busy = true; $('addbtn').disabled = true; $('msg').textContent = 'שומר…';
     db.from(T).insert(r).select('id,d,who,amt,exp').then(function(res){
-      if(!res.error){ rows.push(res.data[0]); render(); $('who').value=''; $('amt').value=''; }
-      done(res, (kind==='exp'?'נוסף לצפי: ':'נוסף: ') + who + ' ' + fmt(amt));
+      if(res.error){ done(res); return; }
+      rows.push(res.data[0]); $('who').value=''; $('amt').value='';
+      if(kind==='exp'){ render(); done(res, 'נוסף לצפי: ' + who + ' ' + fmt(amt)); return; }
+      offset(skey(who), amt, function(r2, note){ render(); done(r2, 'נוסף: ' + who + ' ' + fmt(amt) + note); });
     });
   });
 
@@ -284,6 +330,13 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
       if(isPart){ partId = (partId===pid ? null : pid); editId = null; } else { editId = (editId===pid ? null : pid); partId = null; }
       armed = null; render();
       var inp = $(isPart ? 'ppamt' : 'edamt'); if(inp && (partId||editId)) inp.focus(); return; }
+    if(t.closest('.ok2')){ paySupplier(); return; }
+    if(t.closest('.no2')){ payS = null; render(); return; }
+    if(t.closest('tr.payrow')) return;
+    var pb = t.closest('.pbtn');
+    if(pb){ var pk = pb.getAttribute('data-p'); payS = (payS===pk?null:pk); render(); var pi=$('pamt'); if(pi) pi.focus(); return; }
+    var st = t.closest('tr.sup');
+    if(st){ var sk = st.getAttribute('data-s'); openS[sk] = !openS[sk]; render(); return; }
     var gl = t.closest('li.grp');
     if(gl){ var gk = gl.getAttribute('data-g'); openG[gk] = !openG[gk]; render(); return; }
     var b = t.closest('.del,.pay'); if(!b) return;
@@ -301,6 +354,34 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
     }
   });
 
+
+  /* קיזוז: תשלום ששולם יורד מהצפוי של אותו ספק (מהישן לחדש) */
+  var skey = function(w){ return w.trim().replace(/^תשלום\s+ל/,'').split(/[\s–-]+/)[0]; };
+  function offset(k, amount, cb){
+    var ex = rows.filter(function(r){ return r.exp && r.amt>0 && skey(r.who)===k; }).sort(function(a,b){return a.id-b.id});
+    var left = amount, ops = [];
+    ex.forEach(function(r){
+      if(left<=0) return;
+      if(left>=r.amt){ left-=r.amt; rows = rows.filter(function(x){return x.id!==r.id}); ops.push(db.from(T).delete().eq('id', r.id)); }
+      else { r.amt -= left; left = 0; ops.push(db.from(T).update({amt:r.amt}).eq('id', r.id)); }
+    });
+    Promise.all(ops).then(function(res){
+      var err = res.filter(function(x){return x.error})[0];
+      var rest = rows.filter(function(r){ return r.exp && skey(r.who)===k; }).reduce(function(t,r){return t+r.amt},0);
+      cb(err||{}, ex.length ? (rest ? ' · נשאר לשלם ' + fmt(rest) : ' · סגור ✓') : '');
+    });
+  }
+  function paySupplier(){
+    var k = payS; if(!k) return;
+    var amt = num('pamt'), d = $('pdate').value || today();
+    if(!amt){ $('msg').textContent = 'צריך לכתוב כמה שילמת.'; return; }
+    busy = true; payS = null;
+    db.from(T).insert({d:d, who:k, amt:amt, exp:false}).select('id,d,who,amt,exp').then(function(res){
+      if(res.error){ done(res); return; }
+      rows.push(res.data[0]);
+      offset(k, amt, function(r2, note){ render(); done(r2, 'נרשם: ' + k + ' ' + fmt(amt) + note); });
+    });
+  }
   function num(id){ return Math.round(parseFloat(($(id).value||'').replace(/[^\d.]/g,''))) || 0; }
 
   /* תשלום חלקי: רושם את מה ששולם ומוריד אותו מהסכום הצפוי */
@@ -335,7 +416,8 @@ li.sub{padding-inline-start:16px;border-bottom-style:dashed}
   }
   $('appView').addEventListener('keydown', function(e){
     if(e.key!=='Enter') return;
-    if(e.target.id==='ppamt'){ e.preventDefault(); payPart(); }
+    if(e.target.id==='pamt'){ e.preventDefault(); paySupplier(); }
+    else if(e.target.id==='ppamt'){ e.preventDefault(); payPart(); }
     else if(/^ed(who|amt|date)$/.test(e.target.id)){ e.preventDefault(); saveEdit(); }
   });
 })();
