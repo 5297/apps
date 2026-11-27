@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ניהול חובות</title>
+<meta name="theme-color" content="#1e3a5f">
+<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root { --main:#1e3a5f; --soft:#e8eef6; --bg:#f4f6f9; --text:#1b1f24; --muted:#5b6470; --bad:#b3261e; --good:#1e7a3c; }
+  body.shimon { --main:#1f6b3a; --soft:#e5f2ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--text); font-size:18px; padding-bottom:76px; }
+  header { background:var(--main); color:#fff; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:22px; }
+  header button { background:transparent; color:#fff; border:1px solid #fff8; border-radius:8px; padding:6px 10px; font-size:15px; }
+  .sync { font-size:14px; color:var(--muted); padding:8px 16px; }
+  .ro { background:#fff4d6; color:#6b4e00; font-size:15px; padding:8px 16px; }
+  main { padding:12px; }
+  .card { background:#fff; border-radius:12px; padding:14px; margin-bottom:12px; box-shadow:0 1px 3px #0001; }
+  .tot { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee; }
+  .tot:last-child { border-bottom:0; }
+  .tot b { font-size:20px; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:10px 0; border-bottom:1px solid #eee; }
+  .row:last-child { border-bottom:0; }
+  .sub { color:var(--muted); font-size:15px; }
+  .neg { color:var(--good); } .pos { color:var(--bad); }
+  input[type=search] { width:100%; font-size:18px; padding:10px; border:1px solid #ccd; border-radius:10px; margin-bottom:10px; }
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:#fff; border-top:1px solid #dde; }
+  nav button { flex:1; padding:14px 4px; font-size:17px; border:0; background:none; color:var(--muted); }
+  nav button.on { color:var(--main); font-weight:700; border-top:3px solid var(--main); }
+  .center { text-align:center; padding:40px 16px; }
+  .big { font-size:20px; padding:14px 22px; border-radius:12px; border:0; background:var(--main); color:#fff; }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+<header><h1>ניהול חובות</h1><button id="out" class="hide">יציאה</button></header>
+<div class="ro">צפייה בלבד – הרישום נשאר במערכת הישנה</div>
+<div class="sync" id="sync"></div>
+
+<div id="login" class="center hide">
+  <p>כניסה עם חשבון הגוגל שלך</p>
+  <button class="big" id="loginBtn">כניסה עם גוגל</button>
+</div>
+<div id="denied" class="center hide">
+  <p>החשבון הזה לא מורשה לראות את המערכת.</p>
+  <button class="big" id="deniedOut">יציאה והחלפת חשבון</button>
+</div>
+
+<main id="app" class="hide">
+  <section id="t-sum"></section>
+  <section id="t-clients" class="hide">
+    <input type="search" id="q" placeholder="חיפוש לקוח">
+    <div class="card" id="clients"></div>
+  </section>
+  <section id="t-recent" class="hide"><div class="card" id="recent"></div></section>
+</main>
+
+<nav id="nav" class="hide">
+  <button data-t="sum" class="on">סיכום</button>
+  <button data-t="clients">לקוחות</button>
+  <button data-t="recent">עדכונים</button>
+</nav>
+
+<script>
+const SB_URL = 'https://gqmhytzbodfxnktdbyue.supabase.co';
+const SB_PUBLIC = 'sb_publishable_0wIgdQ4zF6n9ponOvCBTYQ_8Cpl5GLW'; // ציבורי; ההגנה היא בנעילת הטבלאות
+const MOSHE_EMAIL = '0548529975a@gmail.com';
+const sb = supabase.createClient(SB_URL, SB_PUBLIC);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => (n < 0 ? '-' : '') + '₪' + Math.abs(+n || 0).toLocaleString('he-IL', {minimumFractionDigits:2, maximumFractionDigits:2});
+const show = (id, on) => $(id).classList.toggle('hide', !on);
+
+$('loginBtn').onclick = () => sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin + location.pathname } });
+$('out').onclick = $('deniedOut').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  ['sum','clients','recent'].forEach(t => show('t-' + t, t === b.dataset.t));
+});
+
+async function start() {
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) { show('login', true); return; }
+  show('out', true);
+  const email = (session.user.email || '').toLowerCase();
+  const isShimon = email !== MOSHE_EMAIL;
+  document.body.classList.toggle('shimon', isShimon);
+
+  // אם החשבון לא ברשימת המורשים, השרת מחזיר רשימה ריקה
+  const log = await sb.from('debt_sync_log').select('*');
+  if (log.error || !log.data || !log.data.length) { show('denied', true); return; }
+  const last = log.data.map(r => new Date(r.synced_at)).sort((a,b) => b-a)[0];
+  $('sync').textContent = 'עודכן מהגיליון: ' + last.toLocaleString('he-IL', {day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit'});
+  show('app', true); show('nav', true);
+
+  await Promise.all([loadSummary(isShimon), loadRecent()]);
+}
+
+// החישובים מגיעים מסופבייס (משחזרים את לשונית 'סיכום'), לא מחושבים בדף
+async function loadSummary(isShimon) {
+  const t = await sb.from('debt_totals').select('*').maybeSingle();
+  const c = await sb.from('debt_client_balances').select('*').order('debt', { ascending:false });
+  if (t.error || c.error) {
+    $('t-sum').innerHTML = '<div class="card center">החישוב עדיין לא הוכן. בינתיים אפשר לראות את העדכונים האחרונים.</div>';
+    $('clients').innerHTML = '<div class="sub">עדיין אין נתונים</div>';
+    return;
+  }
+  const s = t.data || {};
+  const lines = isShimon
+    ? [['מגיע לשמעון מלקוחות', s.due_shimon_from_clients], ['יתרה לשמעון', s.shimon_balance], ['ממתין לאישור "קיבלתי"', s.pending_received]]
+    : [['לקוחות חייבים', s.clients_owe_moshe_view], ['יתרות זכות של לקוחות', s.client_credits], ['מגיע לשמעון מלקוחות', s.due_shimon_from_clients], ['יתרה לשמעון', s.shimon_balance], ['ממתין לאישור "קיבלתי"', s.pending_received], ['כסף שהתקבל החודש', s.received_this_month]];
+  $('t-sum').innerHTML = '<div class="card">' + lines.map(([k,v]) => `<div class="tot"><span>${esc(k)}</span><b>${money(v)}</b></div>`).join('') + '</div>';
+
+  const rows = c.data.filter(r => isShimon ? r.has_shimon : r.show_moshe);
+  const draw = () => {
+    const q = $('q').value.trim();
+    const list = rows.filter(r => !q || (r.client || '').includes(q));
+    $('clients').innerHTML = list.length ? list.map(r => `<div class="row"><div>${esc(r.client)}${+r.due_shimon > 0 ? `<div class="sub">מזה לשמעון ${money(r.due_shimon)}</div>` : ''}</div><b class="${r.debt < 0 ? 'neg' : 'pos'}">${money(r.debt)}</b></div>`).join('') : '<div class="sub">אין תוצאות</div>';
+  };
+  $('q').oninput = draw; draw();
+}
+
+async function loadRecent() {
+  const r = await sb.from('debt_entries').select('row_num,date_text,client,job,kind,client_payment,total_debt,added_by').order('row_num', { ascending:false }).limit(50);
+  if (r.error) { $('recent').innerHTML = '<div class="sub">שגיאה בטעינה</div>'; return; }
+  $('recent').innerHTML = r.data.map(x => {
+    const what = x.kind ? x.kind : (+x.client_payment > 0 ? 'תשלום ' + money(x.client_payment) : 'עבודה ' + money(x.total_debt));
+    return `<div class="row"><div>${esc(x.client)}<div class="sub">${esc(x.date_text)} · ${esc(x.job || '')}</div></div><div>${esc(what)}</div></div>`;
+  }).join('');
+}
+
+sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_IN' && location.hash) history.replaceState(null, '', location.pathname); });
+start();
+</script>
+</body>
+</html>
